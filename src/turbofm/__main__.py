@@ -84,6 +84,20 @@ def run_simple(con):
     for ia in cfg_['imap_accounts']:
         logging.info("id=%s" % ia["id"])
         box = mailbox.mbox(ia["mbox"])
+
+        try:
+            box.lock()
+            box.unlock()
+        except:
+            try:
+                input("Unable to get LOCK... Press RETURN to FORCE or CTRL-C to abort")
+                os.unlink(ia['mbox'] + ".lock")
+                logging.info("Lock removed")
+            except:
+                print()
+                logging.info("Abort by user")
+                sys.exit(0)
+
         try:
             logging.info("Locking mbox")
             box.lock()
@@ -100,16 +114,30 @@ def run_simple(con):
 
             logging.info("Counting messages")
             t, d = conn__.search(None, "ALL")
-            allcount = len(d[0].split())
-
+            allcount = 0
+            dnullsplitted = []
+            if d[0] != None:
+                allcount = len(d[0].split())
+                dnullsplitted = d[0].split()
+                
             logging.info("Found %d message(s)" % allcount)
 
-            for msg_number in d[0].split():
-                #print(str(msg_number) + "/" + str(allcount))
+            for msg_number in dnullsplitted:
                 logging.info("Downloading message from server")
-                msg_t, msg_d = conn__.fetch(msg_number, "(RFC822)")
-                logging.info("Saving to local mbox")
+                msg_t = None
+                msg_d = None
+
+                if ia["server"].endswith(".mail.me.com"):
+                    #msg_t, msg_d = conn__.fetch(msg_number, "(RFC822)")
+                    msg_t, msg_d = conn__.fetch(msg_number, "(BODY[])")
+                else:
+                    msg_t, msg_d = conn__.fetch(msg_number, "(RFC822)")
+
+                #PP(msg_d)
+
+                logging.info("Processing mail")
                 msg = email.message_from_bytes(msg_d[0][1])
+                logging.info("Saving to local mbox")
                 box.add(msg)
                 logging.info("Marking message for deletion")
                 msg_t, msg_d = conn__.store(msg_number, "+FLAGS", "\\Deleted")
