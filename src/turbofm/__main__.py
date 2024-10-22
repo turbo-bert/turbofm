@@ -54,7 +54,7 @@ cfg_ = {}
 def run_init(cfg:configparser.ConfigParser, con):
     global cfg_
     cfg_['home'] = os.path.expanduser(cfg.get("main", "home"))
-    logging.info("home=%s" % cfg_['home'])
+    #logging.info("(main-config): home=%s" % cfg_['home'])
     os.makedirs(cfg_['home'], exist_ok=True)
     # make dirs for each imap account:
     imap_accounts = []
@@ -79,10 +79,15 @@ def run_init(cfg:configparser.ConfigParser, con):
             
             imap_accounts.append(x)
     cfg_['imap_accounts'] = imap_accounts
+    #logging.info("(main-config): Ready to go!")
+    
 
 def run_simple(con):
+    #logging.info("Starting IMAP mail fetch for all registered accounts...")
+    mail_total = 0
+    t_start = time.time()
     for ia in cfg_['imap_accounts']:
-        logging.info("id=%s" % ia["id"])
+        logging.info("IMAP ACCOUNT id=[ %s ]" % ia["id"])
         box = mailbox.mbox(ia["mbox"])
 
         try:
@@ -92,27 +97,27 @@ def run_simple(con):
             try:
                 input("Unable to get LOCK... Press RETURN to FORCE or CTRL-C to abort")
                 os.unlink(ia['mbox'] + ".lock")
-                logging.info(" -> Lock removed")
+                #logging.info(" -> Lock removed")
             except:
                 print()
-                logging.info("Abort by user")
+                #logging.info("Abort by user")
                 sys.exit(0)
 
         try:
-            logging.info(" -> Locking mbox")
+            #logging.info(" -> Locking mbox")
             box.lock()
             context__ = ssl.create_default_context()
 
-            logging.info(" -> Connecting to server")
+            #logging.info(" -> Connecting to server")
             conn__ = imaplib.IMAP4_SSL(host=ia['server'], port=int(ia['sslport']), ssl_context=context__)
 
-            logging.info(" -> Running AUTH")
+            #logging.info(" -> Running AUTH")
             conn__.login(ia['login'], ia['pass'])
 
-            logging.info(" -> Selecting INBOX")
+            #logging.info(" -> Selecting INBOX")
             conn__.select("INBOX", False)
 
-            logging.info(" -> Counting messages")
+            #logging.info(" -> Counting messages")
             t, d = conn__.search(None, "ALL")
             allcount = 0
             dnullsplitted = []
@@ -120,12 +125,16 @@ def run_simple(con):
                 allcount = len(d[0].split())
                 dnullsplitted = d[0].split()
 
-            logging.info(" -> Found --------------------------------------- %d message(s) for %s" % (allcount, ia['id']))
+            info_string = "-----------  %d : %s  -----------" % (allcount, ia['id'])
+            info_string_padd = "-" * len(info_string)
+            #logging.info(" -> %s" % info_string_padd)
+            #logging.info(" -> %s" % info_string)
+            #logging.info(" -> %s" % info_string_padd)
 
             msg_human_counter=0
             for msg_number in dnullsplitted:
                 msg_human_counter +=1
-                logging.info(" -----> (%d/%d) Downloading message from server" % (msg_human_counter, allcount))
+                #logging.info(" -----> (%d/%d) Downloading message from server" % (msg_human_counter, allcount))
                 msg_t = None
                 msg_d = None
 
@@ -137,24 +146,28 @@ def run_simple(con):
 
                 #PP(msg_d)
 
-                logging.info(" -----> (%d/%d) Processing message" % (msg_human_counter, allcount))
+                #logging.info(" -----> (%d/%d) Processing message" % (msg_human_counter, allcount))
                 msg = email.message_from_bytes(msg_d[0][1])
-                logging.info(" -----> (%d/%d) Saving to local mbox" % (msg_human_counter, allcount))
+                logging.info(" -----> (%d/%d) FROM=[ %s ]" % (msg_human_counter, allcount, msg.get("from")))
+                #logging.info(" -----> (%d/%d) Saving to local mbox" % (msg_human_counter, allcount))
                 box.add(msg)
-                logging.info(" -----> (%d/%d) Marking message for deletion" % (msg_human_counter, allcount))
+                #logging.info(" -----> (%d/%d) Marking message for deletion" % (msg_human_counter, allcount))
                 msg_t, msg_d = conn__.store(msg_number, "+FLAGS", "\\Deleted")
-                logging.info(" --")
+                #logging.info(" --")
             
-            logging.info(" -> Deleting marked messages from server - if any")
+            #logging.info(" -> Deleting marked messages from server - if any")
             conn__.expunge()
-            logging.info(" -> Disconnecting from server")
+            #logging.info(" -> Disconnecting from server")
             conn__.close()
             conn__.logout()
 
-            logging.info(" -> Releasing lock on mbox")
+            #logging.info(" -> Releasing lock on mbox")
             box.unlock()
         except Exception as exc:
             logging.error(exc)
+    t_stop = time.time()
+    s_dur = int(t_stop-t_start+1)
+    #logging.info("IMAP mail fetch for all registered accounts... FINISHED duration:%ds mails:%d" % (s_dur, mail_total))
 
 run_init(cfg, CONSOLE)
 
